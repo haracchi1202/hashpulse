@@ -1,0 +1,39 @@
+node_modules
+.next
+out
+dist
+.DS_Store
+
+# env
+.env
+.env.local
+.env*.local
+
+# logs
+npm-debug.log*
+yarn-error.log
+*.log
+
+# prisma
+prisma/.env
+
+# vercel
+.vercel
+
+# IDE
+.vscode
+.idea
+
+# typescript
+*.tsbuildinfo
+next-env.d.ts
+
+# 画像はリポジトリ対象外（本プロジェクトは画像アセットを持たず、紛れ込んだスクショ等を除外する）
+*.png
+*.jpg
+*.jpeg
+*.gif
+*.webp
+
+# プロジェクト外のユーザー画像フォルダ（hashpulse 直下に紛れ込んでいる。リポジトリ対象外）
+/Pictures/

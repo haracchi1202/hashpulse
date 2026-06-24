@@ -1,0 +1,81 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    /* POP・ライトグリーン基調テーマ */
+    --background: 96 62% 95%;
+    --foreground: 152 32% 14%;
+
+    --card: 0 0% 100%;
+    --card-foreground: 152 32% 14%;
+
+    --popover: 0 0% 100%;
+    --popover-foreground: 152 32% 14%;
+
+    --primary: 142 72% 42%;
+    --primary-foreground: 0 0% 100%;
+
+    --secondary: 95 58% 88%;
+    --secondary-foreground: 152 32% 18%;
+
+    --muted: 100 38% 91%;
+    --muted-foreground: 150 14% 38%;
+
+    --accent: 84 80% 50%;
+    --accent-foreground: 152 40% 14%;
+
+    --destructive: 0 74% 51%;
+    --destructive-foreground: 0 0% 100%;
+
+    --border: 112 32% 82%;
+    --input: 112 32% 82%;
+    --ring: 142 72% 42%;
+
+    --radius: 0.85rem;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+  body {
+    @apply bg-background text-foreground antialiased;
+    font-feature-settings: "rlig" 1, "calt" 1;
+  }
+  .font-tabular {
+    font-variant-numeric: tabular-nums;
+  }
+}
+
+/* PDF 出力（ブラウザ印刷）用。サイドバー・操作ボタンを隠し、白背景で整形する。 */
+@media print {
+  /* 背景色（バー＝メーターのbg-primary/emerald/rose 等）を印刷でも描画する。
+     これが無いとブラウザ既定で背景色が省略され、メーターが消える。 */
+  *,
+  *::before,
+  *::after {
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+  }
+  aside,
+  .no-print {
+    display: none !important;
+  }
+  body {
+    background: #fff !important;
+  }
+  main {
+    overflow: visible !important;
+  }
+  /* カードの枠は淡く、改ページで途切れにくくする */
+  section,
+  .rounded-lg {
+    break-inside: avoid;
+  }
+  a[target="_blank"] {
+    text-decoration: none;
+  }
+}

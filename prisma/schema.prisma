@@ -1,0 +1,215 @@
+generator client {
+  provider      = "prisma-client-js"
+  binaryTargets = ["native"]
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+// ============================================================
+// Enums
+// ============================================================
+
+enum Platform {
+  X
+  INSTAGRAM
+  TIKTOK
+}
+
+enum Cadence {
+  HOURLY
+  SIX_HOURLY
+  DAILY
+  MANUAL
+}
+
+enum Plan {
+  FREE
+  PRO
+  ENTERPRISE
+}
+
+// ============================================================
+// User (Clerk の影)
+// ============================================================
+
+model User {
+  id        String   @id @default(cuid())
+  clerkId   String   @unique
+  email     String   @unique
+  name      String?
+  plan      Plan     @default(FREE)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  searches Search[]
+}
+
+// ============================================================
+// Search — 検索条件 (一時実行 + 保存検索)
+// ============================================================
+
+model Search {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  name      String?              // 保存検索の表示名
+  query     String               // raw 文字列: "(#筋トレ AND #増量) OR #ダイエット"
+  platforms Platform[]
+  filters   Json                 // SearchFilters JSON
+  saved     Boolean  @default(false)
+  cadence   Cadence  @default(MANUAL)
+
+  lastRunAt DateTime?
+  lastErrors Json?               // 直近収集のプラットフォーム別エラー（string[]）。レート上限(495)等を画面表示するため保持
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  posts     Post[]
+  snapshots Snapshot[]
+
+  @@index([userId, createdAt])
+  @@index([userId, saved])
+}
+
+// ============================================================
+// Hashtag (正規化済み)
+// ============================================================
+
+model Hashtag {
+  id          String @id @default(cuid())
+  normalized  String @unique  // 小文字 + trim
+  displayName String          // 元表記
+
+  posts Post[] @relation("PostHashtags")
+
+  @@index([normalized])
+}
+
+// ============================================================
+// Account (X / IG アカウント)
+// ============================================================
+
+model Account {
+  id           String   @id @default(cuid())
+  platform     Platform
+  externalId   String                  // X user_id / IG ig_user_id
+  username     String                  // @handle
+  displayName  String?
+  followers    Int      @default(0)
+  following    Int      @default(0)
+  verified     Boolean  @default(false)
+  bio          String?
+  profileImage String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  posts Post[]
+
+  @@unique([platform, externalId])
+  @@index([username])
+}
+
+// ============================================================
+// Post (X tweet / IG media を統合)
+// ============================================================
+
+model Post {
+  id          String   @id @default(cuid())
+  searchId    String
+  search      Search   @relation(fields: [searchId], references: [id], onDelete: Cascade)
+  accountId   String
+  account     Account  @relation(fields: [accountId], references: [id])
+
+  platform    Platform
+  externalId  String                  // tweet_id / media_id
+  text        String
+  url         String
+  postedAt    DateTime
+  lang        String?
+
+  likeCount       Int @default(0)
+  retweetCount    Int @default(0)
+  replyCount      Int @default(0)
+  quoteCount      Int @default(0)
+  impressionCount Int @default(0)
+
+  hashtags Hashtag[] @relation("PostHashtags")
+  metrics  Metric[]
+  comments Comment[]
+
+  capturedAt DateTime @default(now())
+
+  @@unique([platform, externalId])
+  @@index([searchId, postedAt])
+  @@index([accountId, postedAt])
+}
+
+// ============================================================
+// Comment (Post への返信/コメント。反響分析の素材)
+// ============================================================
+
+model Comment {
+  id         String   @id @default(cuid())
+  postId     String
+  post       Post     @relation(fields: [postId], references: [id], onDelete: Cascade)
+
+  platform   Platform
+  externalId String                 // reply tweet_id / comment cid / pk
+  text       String
+  authorUsername String?
+  likeCount  Int @default(0)
+  postedAt   DateTime?
+
+  capturedAt DateTime @default(now())
+
+  @@unique([platform, externalId])
+  @@index([postId])
+}
+
+// ============================================================
+// Metric (Post の時系列スナップショット)
+// ============================================================
+
+model Metric {
+  id     String @id @default(cuid())
+  postId String
+  post   Post   @relation(fields: [postId], references: [id], onDelete: Cascade)
+
+  likeCount       Int
+  retweetCount    Int
+  replyCount      Int
+  quoteCount      Int
+  impressionCount Int
+
+  capturedAt DateTime @default(now())
+
+  @@index([postId, capturedAt])
+}
+
+// ============================================================
+// Snapshot (検索 × 日付の事前集計; Phase 4)
+// ============================================================
+
+model Snapshot {
+  id       String @id @default(cuid())
+  searchId String
+  search   Search @relation(fields: [searchId], references: [id], onDelete: Cascade)
+
+  date            DateTime
+  postCount       Int
+  totalLikes      Int
+  totalRetweets   Int
+  totalImpressions Int
+  avgER           Float
+
+  createdAt DateTime @default(now())
+
+  @@unique([searchId, date])
+  @@index([searchId, date])
+}
