@@ -13,7 +13,7 @@ export const RESEARCH_SCOPE: ResearchScope[] = [
     notes: [
       "キーワード + #タグ（AND / OR / NOT）",
       "フレーズは完全一致で抽出",
-      "リツイートは除外",
+      "リツイートも含む",
       "いいね/RT/返信/引用/表示数を取得",
     ],
   },

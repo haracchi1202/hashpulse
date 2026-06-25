@@ -19,6 +19,10 @@ const MAX_PAGES_SAFETY = 250;
 // 連続リクエストの間隔（レート制御）。
 const MIN_INTERVAL_MS = Number(process.env.TIKTOK_MIN_INTERVAL_MS ?? 1200);
 const MAX_RETRIES_429 = 3;
+// 1リクエストごとの上限（ハング対策）。
+const FETCH_TIMEOUT_MS = Number(process.env.TIKTOK_FETCH_TIMEOUT_MS ?? 20000);
+// TikTok 収集全体の時間予算。超えたら集まった分で打ち切り、関数 504 を防ぐ。
+const TIKTOK_BUDGET_MS = Number(process.env.TIKTOK_BUDGET_MS ?? 35000);
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
@@ -102,10 +106,29 @@ async function fetchPage(
   if (cursor) url.searchParams.set("cursor", cursor);
 
   for (let attempt = 0; ; attempt++) {
-    const res = await fetch(url.toString(), {
-      headers: { "User-Agent": "HashPulse/0.1" },
-      cache: "no-store",
-    });
+    // EnsembleData の遅延/ハングで関数全体が 504 になるのを防ぐため、
+    // 1リクエストごとに 20 秒で打ち切る。タイムアウトは collect 側の
+    // try/catch が拾い、X/IG の結果は守られる。
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), FETCH_TIMEOUT_MS);
+    let res: Response;
+    try {
+      res = await fetch(url.toString(), {
+        headers: { "User-Agent": "HashPulse/0.1" },
+        cache: "no-store",
+        signal: ctrl.signal,
+      });
+    } catch (e) {
+      clearTimeout(timer);
+      if ((e as Error).name === "AbortError") {
+        throw new TikTokApiError(
+          `EnsembleData リクエストが ${FETCH_TIMEOUT_MS / 1000}秒でタイムアウトしました`,
+          0
+        );
+      }
+      throw e;
+    }
+    clearTimeout(timer);
     const text = await res.text();
     let body: unknown = text;
     try {
@@ -150,8 +173,10 @@ export async function searchTikTokEnsemble(
   const until = toUnixSeconds(opts.endTime);
   const collected: NormalizedPost[] = [];
   const seen = new Set<string>();
+  const deadline = Date.now() + TIKTOK_BUDGET_MS;
 
   for (const raw of opts.hashtags) {
+    if (Date.now() > deadline) break;
     const word = raw.replace(/^#/, "").trim();
     if (!word) continue;
 
@@ -161,6 +186,7 @@ export async function searchTikTokEnsemble(
 
     let cursor = "";
     for (let page = 0; page < MAX_PAGES_SAFETY; page++) {
+      if (Date.now() > deadline) break;
       if (page > 0 && MIN_INTERVAL_MS > 0) await sleep(MIN_INTERVAL_MS);
       const res = await fetchPage(endpoint, params, cursor);
       const items = extractAwemes(res);

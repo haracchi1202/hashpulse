@@ -1,1 +1,1 @@
-export { requireUser, getOptionalUser } from "./server";
+export { requireUser, getOptionalUser, syncUser } from "./server";

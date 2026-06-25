@@ -8,6 +8,9 @@ import { runCollection } from "@/skills/collect";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
+// 収集（X / IG / TikTok）に時間がかかるため実行上限を引き上げる。
+// Hobby プランの上限内（最大 60 秒）。TikTok 側は 35 秒の時間予算で先に打ち切る。
+export const maxDuration = 60;
 
 const BodySchema = z.object({
   query: z.string().min(1).max(500),

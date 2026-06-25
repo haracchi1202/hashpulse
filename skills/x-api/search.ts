@@ -88,6 +88,7 @@ export async function searchRecent(
 function buildQuery(opts: XSearchOptions): string {
   const parts = [opts.query];
   if (opts.lang) parts.push(`lang:${opts.lang}`);
-  if (opts.excludeRetweets !== false) parts.push("-is:retweet");
+  // 既定では RT も含める。除外したい場合のみ excludeRetweets: true を渡す
+  if (opts.excludeRetweets === true) parts.push("-is:retweet");
   return parts.join(" ");
 }

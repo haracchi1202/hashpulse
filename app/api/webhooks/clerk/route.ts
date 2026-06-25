@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { Webhook } from "svix";
 import { prisma } from "@/skills/prisma";
+import { syncUser } from "@/skills/auth";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -58,11 +59,8 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ ok: true, data: { skipped: "no email" } });
     }
     const name = [data.first_name, data.last_name].filter(Boolean).join(" ") || null;
-    await prisma.user.upsert({
-      where: { clerkId: data.id },
-      create: { clerkId: data.id, email, name },
-      update: { email, name },
-    });
+    // clerkId/email のどちらか一致で再リンクする同期（unique 衝突を回避）
+    await syncUser(data.id, email, name);
   } else if (type === "user.deleted") {
     await prisma.user.deleteMany({ where: { clerkId: data.id } });
   }

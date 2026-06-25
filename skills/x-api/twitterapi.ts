@@ -78,7 +78,8 @@ function toUnixSeconds(iso?: string): number | undefined {
 function buildQuery(opts: XSearchOptions): string {
   const parts = [opts.query];
   if (opts.lang) parts.push(`lang:${opts.lang}`);
-  if (opts.excludeRetweets !== false) parts.push("-filter:retweets");
+  // 既定では RT も含める。除外したい場合のみ excludeRetweets: true を渡す
+  if (opts.excludeRetweets === true) parts.push("-filter:retweets");
   const since = toUnixSeconds(opts.startTime);
   const until = toUnixSeconds(opts.endTime);
   if (since !== undefined) parts.push(`since_time:${since}`);

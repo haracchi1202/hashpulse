@@ -32,29 +32,47 @@ export function SearchForm() {
       return;
     }
     startTransition(async () => {
-      const res = await fetch("/api/search", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          query,
-          platforms: selected,
-          filters: {
-            minLikes: minLikes ? Number(minLikes) : undefined,
-            minFollowers: minFollowers ? Number(minFollowers) : undefined,
-            lang: lang || undefined,
-          },
-          save,
-          name: save && saveName ? saveName : undefined,
-          maxResults: 1000,
-        }),
-      });
-      const json = await res.json();
-      if (!json.ok) {
-        setError(json.error?.message ?? "検索に失敗しました");
-        return;
+      try {
+        const res = await fetch("/api/search", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            query,
+            platforms: selected,
+            filters: {
+              minLikes: minLikes ? Number(minLikes) : undefined,
+              minFollowers: minFollowers ? Number(minFollowers) : undefined,
+              lang: lang || undefined,
+            },
+            save,
+            name: save && saveName ? saveName : undefined,
+            maxResults: 1000,
+          }),
+        });
+        // 504/502 等はゲートウェイが HTML を返すため、JSON 解析を保護する
+        let json: { ok?: boolean; data?: { searchId?: string }; error?: { message?: string } } | null = null;
+        try {
+          json = await res.json();
+        } catch {
+          json = null;
+        }
+        if (!res.ok || !json?.ok) {
+          if (res.status === 504 || res.status === 502) {
+            setError("検索がタイムアウトしました。対象プラットフォームを減らすか、時間をおいて再実行してください（特に TikTok は時間がかかることがあります）。");
+          } else {
+            setError(json?.error?.message ?? `検索に失敗しました (HTTP ${res.status})`);
+          }
+          return;
+        }
+        if (!json.data?.searchId) {
+          setError("検索は完了しましたが結果IDを取得できませんでした。");
+          return;
+        }
+        router.push(`/dashboard?searchId=${json.data.searchId}`);
+        router.refresh();
+      } catch {
+        setError("ネットワークエラーが発生しました。時間をおいて再実行してください。");
       }
-      router.push(`/dashboard?searchId=${json.data.searchId}`);
-      router.refresh();
     });
   }
 
