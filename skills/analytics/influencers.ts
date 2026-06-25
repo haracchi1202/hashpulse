@@ -13,7 +13,7 @@ export interface InfluencerPost {
   platform?: string;
 }
 
-export type RankBy = "er" | "likes" | "impressions";
+export type RankBy = "followers" | "er" | "likes" | "impressions";
 
 export function rankInfluencers(
   posts: InfluencerPost[],
@@ -82,6 +82,8 @@ export function rankInfluencers(
 
   rows.sort((a, b) => {
     switch (by) {
+      case "followers":
+        return b.followers - a.followers;
       case "er":
         return b.avgER - a.avgER;
       case "likes":

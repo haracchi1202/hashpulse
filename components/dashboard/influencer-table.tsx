@@ -1,4 +1,4 @@
-import { formatNumber, formatPercent } from "@/lib/utils";
+import { accountUrl, formatNumber, formatPercent } from "@/lib/utils";
 import type { InfluencerRow } from "@/lib/types";
 
 export function InfluencerTable({ rows }: { rows: InfluencerRow[] }) {
@@ -25,12 +25,32 @@ export function InfluencerTable({ rows }: { rows: InfluencerRow[] }) {
               </td>
             </tr>
           ) : (
-            rows.map((r, i) => (
+            rows.map((r, i) => {
+              const profileUrl = accountUrl(r.platform, r.authorUsername);
+              return (
               <tr key={r.authorUsername} className="border-t border-border">
                 <td className="px-3 py-2 text-muted-foreground">{i + 1}</td>
                 <td className="px-3 py-2">
-                  <div className="font-medium">{r.authorDisplayName ?? r.authorUsername}</div>
-                  <div className="text-xs text-muted-foreground">@{r.authorUsername}</div>
+                  {profileUrl ? (
+                    <a
+                      href={profileUrl}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="group"
+                    >
+                      <div className="font-medium group-hover:underline underline-offset-2">
+                        {r.authorDisplayName ?? r.authorUsername}
+                      </div>
+                      <div className="text-xs text-muted-foreground group-hover:text-primary">
+                        @{r.authorUsername} ↗
+                      </div>
+                    </a>
+                  ) : (
+                    <>
+                      <div className="font-medium">{r.authorDisplayName ?? r.authorUsername}</div>
+                      <div className="text-xs text-muted-foreground">@{r.authorUsername}</div>
+                    </>
+                  )}
                 </td>
                 <td className="px-3 py-2 text-right">{formatNumber(r.followers)}</td>
                 <td className="px-3 py-2 text-right">{formatNumber(r.postCount)}</td>
@@ -45,14 +65,20 @@ export function InfluencerTable({ rows }: { rows: InfluencerRow[] }) {
                       rel="noopener noreferrer"
                       className="text-primary underline-offset-2 hover:underline"
                     >
-                      {r.platform === "INSTAGRAM" ? "Instagram" : "X"} で開く ↗
+                      {r.platform === "INSTAGRAM"
+                        ? "Instagram"
+                        : r.platform === "TIKTOK"
+                          ? "TikTok"
+                          : "X"}{" "}
+                      で開く ↗
                     </a>
                   ) : (
                     <span className="text-muted-foreground">—</span>
                   )}
                 </td>
               </tr>
-            ))
+              );
+            })
           )}
         </tbody>
       </table>

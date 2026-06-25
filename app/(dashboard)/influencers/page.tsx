@@ -11,6 +11,7 @@ interface PageProps {
 }
 
 const SORTS: { key: RankBy; label: string }[] = [
+  { key: "followers", label: "フォロワー数順" },
   { key: "er", label: "ER 順" },
   { key: "likes", label: "いいね順" },
   { key: "impressions", label: "表示数順" },
@@ -18,7 +19,7 @@ const SORTS: { key: RankBy; label: string }[] = [
 
 export default async function InfluencersPage({ searchParams }: PageProps) {
   const user = await requireUser();
-  const { searchId, rankBy = "er" } = await searchParams;
+  const { searchId, rankBy = "followers" } = await searchParams;
 
   const latest = searchId
     ? await prisma.search.findFirst({ where: { id: searchId, userId: user.id } })
@@ -43,6 +44,8 @@ export default async function InfluencersPage({ searchParams }: PageProps) {
     replyCount: p.replyCount,
     quoteCount: p.quoteCount,
     impressionCount: p.impressionCount,
+    platform: p.platform,
+    url: p.url,
   }));
 
   const influencers = rankInfluencers(rows, rankBy, 30);

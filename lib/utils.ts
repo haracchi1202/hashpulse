@@ -22,3 +22,25 @@ export function formatDate(d: Date | string | null | undefined): string {
   const date = typeof d === "string" ? new Date(d) : d;
   return date.toISOString().slice(0, 10);
 }
+
+/**
+ * platform と username からアカウントのプロフィール URL を組み立てる。
+ * 不明な platform / username 欠落時は undefined。
+ */
+export function accountUrl(
+  platform: string | null | undefined,
+  username: string | null | undefined
+): string | undefined {
+  if (!username) return undefined;
+  const handle = username.replace(/^@/, "");
+  switch (platform) {
+    case "X":
+      return `https://x.com/${handle}`;
+    case "INSTAGRAM":
+      return `https://instagram.com/${handle}`;
+    case "TIKTOK":
+      return `https://tiktok.com/@${handle}`;
+    default:
+      return undefined;
+  }
+}
