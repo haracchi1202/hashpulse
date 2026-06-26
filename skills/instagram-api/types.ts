@@ -14,4 +14,6 @@ export interface IGSearchOptions {
   endTime?: string;
   minLikes?: number;
   limit?: number;
+  /** タグごとのページ送り上限。時間制限のある環境（Vercel）で打ち切られないよう collect から制限する。 */
+  maxPages?: number;
 }

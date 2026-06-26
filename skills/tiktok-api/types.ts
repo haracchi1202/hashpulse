@@ -10,6 +10,8 @@ export interface TikTokSearchOptions {
   minLikes?: number;
   /** 合計取得目安の上限 */
   limit?: number;
+  /** キーワード/タグごとのページ送り上限。時間制限のある環境（Vercel）で打ち切られないよう collect から制限する。 */
+  maxPages?: number;
 }
 
 // EnsembleData /tt/hashtag/posts のレスポンス（必要な部分のみ・防御的に optional）

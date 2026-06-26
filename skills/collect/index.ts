@@ -34,6 +34,11 @@ export async function runCollection(input: CollectInput): Promise<CollectResult>
   const { searchId, query, platforms, filters, maxResults } = input;
   const errors: string[] = [];
 
+  // IG / TikTok（EnsembleData）はページ送りが遅く、limit=1000 だと数分かかって
+  // Vercel の関数上限(300s)内に終わらず 0 件になる。ページ数を絞って時間内に
+  // 部分結果を確実に返す（cron は時間に余裕があるため env で緩められる）。
+  const IG_TT_MAX_PAGES = Number(process.env.IG_TIKTOK_MAX_PAGES ?? 6);
+
   // 構文パース（失敗時は例外 → 呼び出し側が処理）
   const ast = parse(query);
 
@@ -84,6 +89,8 @@ export async function runCollection(input: CollectInput): Promise<CollectResult>
               endTime: filters?.endDate,
               minLikes: filters?.minLikes,
               limit: maxResults ?? 50,
+              // Vercel の時間制限内に確実に終わらせるためページ送りを制限（0件回避）。
+              maxPages: IG_TT_MAX_PAGES,
             });
             // IG は単一タグ取得 → AND/NOT を後処理で評価（キーワードもタグ化済みで評価）
             collected.push(...igPosts.filter((p) => evaluate(igAst, new Set(p.hashtags))));
@@ -114,6 +121,8 @@ export async function runCollection(input: CollectInput): Promise<CollectResult>
               endTime: filters?.endDate,
               minLikes: filters?.minLikes,
               limit: maxResults ?? 50,
+              // Vercel の時間制限内に確実に終わらせるためページ送りを制限（0件回避）。
+              maxPages: IG_TT_MAX_PAGES,
             });
             // hashtag モードは #一致を後処理で評価（IG と同じ方針）。
             // keyword モードは EnsembleData がクォート未対応で日本語をトークン分割し

@@ -19,6 +19,8 @@ const MAX_RETRIES_429 = 3;
 // 1リクエストごとに打ち切る。タイムアウトは collect 側の try/catch が拾い、
 // 他媒体（X/TikTok）の結果は守られる。
 const FETCH_TIMEOUT_MS = Number(process.env.IG_FETCH_TIMEOUT_MS ?? 20000);
+// IG 収集全体の時間予算（TikTok の TIKTOK_BUDGET_MS と対）。超過時は取れた分を返す。
+const IG_BUDGET_MS = Number(process.env.IG_BUDGET_MS ?? 35000);
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
@@ -201,17 +203,23 @@ export async function igSearchEnsemble(
   opts: IGSearchOptions
 ): Promise<NormalizedPost[]> {
   const target = opts.limit ?? 50;
+  const maxPages = Math.min(opts.maxPages ?? MAX_PAGES_SAFETY, MAX_PAGES_SAFETY);
   const since = toUnixSeconds(opts.startTime);
   const until = toUnixSeconds(opts.endTime);
   const collected: NormalizedPost[] = [];
   const seen = new Set<string>();
+  // TikTok と同様、時間制限のある環境で確実に打ち切るための内部予算。
+  // ここで止まった分も collected として返す（部分結果を捨てない）。
+  const deadline = Date.now() + IG_BUDGET_MS;
 
   for (const raw of opts.hashtags) {
+    if (Date.now() > deadline) break;
     const tag = raw.replace(/^#/, "").trim();
     if (!tag) continue;
 
     let cursor = "";
-    for (let page = 0; page < MAX_PAGES_SAFETY; page++) {
+    for (let page = 0; page < maxPages; page++) {
+      if (Date.now() > deadline) break;
       if (page > 0 && MIN_INTERVAL_MS > 0) await sleep(MIN_INTERVAL_MS);
       const res = await fetchPage(tag, cursor);
       const nodes = extractNodes(res);

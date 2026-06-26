@@ -168,6 +168,7 @@ export async function searchTikTokEnsemble(
   opts: TikTokSearchOptions
 ): Promise<NormalizedPost[]> {
   const target = opts.limit ?? 50;
+  const maxPages = Math.min(opts.maxPages ?? MAX_PAGES_SAFETY, MAX_PAGES_SAFETY);
   const mode = opts.mode ?? "keyword";
   const since = toUnixSeconds(opts.startTime);
   const until = toUnixSeconds(opts.endTime);
@@ -185,7 +186,7 @@ export async function searchTikTokEnsemble(
       mode === "hashtag" ? { name: word } : { name: word, period: "0" };
 
     let cursor = "";
-    for (let page = 0; page < MAX_PAGES_SAFETY; page++) {
+    for (let page = 0; page < maxPages; page++) {
       if (Date.now() > deadline) break;
       if (page > 0 && MIN_INTERVAL_MS > 0) await sleep(MIN_INTERVAL_MS);
       const res = await fetchPage(endpoint, params, cursor);
