@@ -49,7 +49,8 @@ export function SearchForm() {
             maxResults: 1000,
           }),
         });
-        // 504/502 等はゲートウェイが HTML を返すため、JSON 解析を保護する
+        // 収集はサーバ側でバックグラウンド実行されるため、ここではすぐに searchId が返る。
+        // ゲートウェイが HTML を返すケースに備え JSON 解析を保護する。
         let json: { ok?: boolean; data?: { searchId?: string }; error?: { message?: string } } | null = null;
         try {
           json = await res.json();
@@ -57,17 +58,14 @@ export function SearchForm() {
           json = null;
         }
         if (!res.ok || !json?.ok) {
-          if (res.status === 504 || res.status === 502) {
-            setError("検索がタイムアウトしました。対象プラットフォームを減らすか、時間をおいて再実行してください（特に TikTok は時間がかかることがあります）。");
-          } else {
-            setError(json?.error?.message ?? `検索に失敗しました (HTTP ${res.status})`);
-          }
+          setError(json?.error?.message ?? `検索の開始に失敗しました (HTTP ${res.status})`);
           return;
         }
         if (!json.data?.searchId) {
-          setError("検索は完了しましたが結果IDを取得できませんでした。");
+          setError("検索を開始しましたが結果IDを取得できませんでした。");
           return;
         }
+        // RUNNING 状態のダッシュボードへ即遷移。収集の進捗はダッシュボード側がポーリングする。
         router.push(`/dashboard?searchId=${json.data.searchId}`);
         router.refresh();
       } catch {

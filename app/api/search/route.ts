@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from "next/server";
+import { NextRequest, NextResponse, after } from "next/server";
 import { z } from "zod";
 import { Platform } from "@prisma/client";
 import { requireUser } from "@/skills/auth";
@@ -8,9 +8,10 @@ import { runCollection } from "@/skills/collect";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
-// 収集（X / IG / TikTok）に時間がかかるため実行上限を引き上げる。
-// Hobby プランの上限内（最大 60 秒）。TikTok 側は 35 秒の時間予算で先に打ち切る。
-export const maxDuration = 60;
+// 収集はレスポンス送信後に after() でバックグラウンド実行する（クライアントは待たずに
+// searchId を受け取り、status をポーリングして完了を待つ）。after コールバックも関数の
+// 実行上限内で動くため、Fluid Compute の上限いっぱいまで使えるよう 300 秒に引き上げる。
+export const maxDuration = 300;
 
 const BodySchema = z.object({
   query: z.string().min(1).max(500),
@@ -57,7 +58,7 @@ export async function POST(req: NextRequest) {
     );
   }
 
-  // Search レコード作成
+  // Search レコードを RUNNING で作成（収集はこの後 after() でバックグラウンド実行）
   const search = await prisma.search.create({
     data: {
       userId: user.id,
@@ -66,22 +67,45 @@ export async function POST(req: NextRequest) {
       filters: (filters ?? {}) as object,
       saved: save ?? false,
       name: name ?? null,
+      status: "RUNNING",
       lastRunAt: new Date(),
     },
   });
 
-  // 収集 + 永続化（cron と共有）
-  const result = await runCollection({
-    searchId: search.id,
-    query,
-    platforms: platforms as Platform[],
-    filters,
-    maxResults,
+  // 収集 + 永続化（cron と共有）をレスポンス送信後に実行する。
+  // これによりクライアントは収集完了を待たず、/api/search/[id]/status を
+  // ポーリングして進捗を取得できる（ローカルのように時間制限で切られない体験）。
+  after(async () => {
+    try {
+      const result = await runCollection({
+        searchId: search.id,
+        query,
+        platforms: platforms as Platform[],
+        filters,
+        maxResults,
+      });
+      await prisma.search.update({
+        where: { id: search.id },
+        data: { status: "DONE", postCount: result.postCount },
+      });
+    } catch (e) {
+      console.error("[api/search] background collection failed:", e);
+      await prisma.search
+        .update({
+          where: { id: search.id },
+          data: {
+            status: "ERROR",
+            lastErrors: [`collect: ${(e as Error).message}`],
+          },
+        })
+        .catch(() => {});
+    }
   });
 
+  // 収集の完了を待たずに searchId を即返す
   return NextResponse.json({
     ok: true,
-    data: { searchId: search.id, postCount: result.postCount, errors: result.errors },
+    data: { searchId: search.id, status: "RUNNING" },
   });
 }
 

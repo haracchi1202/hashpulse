@@ -32,6 +32,12 @@ enum Plan {
   ENTERPRISE
 }
 
+enum SearchStatus {
+  RUNNING   // 収集をバックグラウンドで実行中
+  DONE      // 収集完了
+  ERROR     // 収集が致命的に失敗
+}
+
 // ============================================================
 // User (Clerk の影)
 // ============================================================
@@ -63,6 +69,11 @@ model Search {
   filters   Json                 // SearchFilters JSON
   saved     Boolean  @default(false)
   cadence   Cadence  @default(MANUAL)
+
+  // 非同期収集の進捗。新規検索は RUNNING で作成し、バックグラウンド収集の完了で DONE/ERROR に更新。
+  // 既定 DONE: 既存行・cron 再収集など同期完了するものはそのまま完了扱いになる。
+  status    SearchStatus @default(DONE)
+  postCount Int          @default(0)   // 直近収集で確定した件数（status バナー/一覧表示用）
 
   lastRunAt DateTime?
   lastErrors Json?               // 直近収集のプラットフォーム別エラー（string[]）。レート上限(495)等を画面表示するため保持

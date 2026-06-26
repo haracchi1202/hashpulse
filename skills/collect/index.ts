@@ -39,24 +39,32 @@ export async function runCollection(input: CollectInput): Promise<CollectResult>
 
   const collected: NormalizedPost[] = [];
 
+  // X / IG / TikTok を並列実行する。直列だと合計時間が関数の実行上限(60s)を
+  // 超えて 504 になるため、合計→最大時間に抑えて時間内に取れた分を返す。
+  const tasks: Promise<NormalizedPost[]>[] = [];
+
   if (platforms.includes("X")) {
-    const xQuery = compileToXQuery(ast);
-    try {
-      const xPosts = await searchX({
-        query: xQuery,
-        startTime: filters?.startDate ? `${filters.startDate}T00:00:00Z` : undefined,
-        endTime: filters?.endDate ? `${filters.endDate}T23:59:59Z` : undefined,
-        lang: filters?.lang,
-        minLikes: filters?.minLikes,
-        minFollowers: filters?.minFollowers,
-        maxResults: maxResults ?? 50,
-        maxPages: 2,
-      });
-      collected.push(...xPosts);
-    } catch (e) {
-      console.error("[collect] X API error:", e);
-      errors.push(`X: ${(e as Error).message}`);
-    }
+    tasks.push(
+      (async () => {
+        const xQuery = compileToXQuery(ast);
+        try {
+          return await searchX({
+            query: xQuery,
+            startTime: filters?.startDate ? `${filters.startDate}T00:00:00Z` : undefined,
+            endTime: filters?.endDate ? `${filters.endDate}T23:59:59Z` : undefined,
+            lang: filters?.lang,
+            minLikes: filters?.minLikes,
+            minFollowers: filters?.minFollowers,
+            maxResults: maxResults ?? 50,
+            maxPages: 2,
+          });
+        } catch (e) {
+          console.error("[collect] X API error:", e);
+          errors.push(`X: ${(e as Error).message}`);
+          return [];
+        }
+      })()
+    );
   }
 
   if (platforms.includes("INSTAGRAM")) {
@@ -66,24 +74,25 @@ export async function runCollection(input: CollectInput): Promise<CollectResult>
     if (leaves.length === 0) {
       errors.push("IG: 検索語がありません（キーワードまたは #タグを入力してください）");
     } else {
-      try {
-        const igPosts = await igSearch({
-          hashtags: leaves,
-          startTime: filters?.startDate,
-          endTime: filters?.endDate,
-          minLikes: filters?.minLikes,
-          limit: maxResults ?? 50,
-        });
-        // IG は単一タグ取得 → AND/NOT を後処理で評価（キーワードもタグ化済みで評価）
-        for (const p of igPosts) {
-          if (evaluate(igAst, new Set(p.hashtags))) {
-            collected.push(p);
+      tasks.push(
+        (async () => {
+          try {
+            const igPosts = await igSearch({
+              hashtags: leaves,
+              startTime: filters?.startDate,
+              endTime: filters?.endDate,
+              minLikes: filters?.minLikes,
+              limit: maxResults ?? 50,
+            });
+            // IG は単一タグ取得 → AND/NOT を後処理で評価（キーワードもタグ化済みで評価）
+            return igPosts.filter((p) => evaluate(igAst, new Set(p.hashtags)));
+          } catch (e) {
+            console.error("[collect] IG error:", e);
+            errors.push(`IG: ${(e as Error).message}`);
+            return [];
           }
-        }
-      } catch (e) {
-        console.error("[collect] IG error:", e);
-        errors.push(`IG: ${(e as Error).message}`);
-      }
+        })()
+      );
     }
   }
 
@@ -94,33 +103,38 @@ export async function runCollection(input: CollectInput): Promise<CollectResult>
     if (leaves.length === 0) {
       errors.push("TikTok: 検索語がありません（キーワードまたは #タグを入力してください）");
     } else {
-      try {
-        const ttMode = getTikTokSearchMode();
-        const ttPosts = await searchTikTok({
-          hashtags: leaves,
-          mode: ttMode,
-          startTime: filters?.startDate,
-          endTime: filters?.endDate,
-          minLikes: filters?.minLikes,
-          limit: maxResults ?? 50,
-        });
-        // hashtag モードは #一致を後処理で評価（IG と同じ方針）。
-        // keyword モードは EnsembleData がクォート未対応で日本語をトークン分割し
-        // 「うるぷくシール」→「うる/ぷく/シール」を含むだけの投稿まで返すため、
-        // 元 AST を本文に対してフレーズ完全一致評価し、過剰収集を除外する（他のワードでも同様）。
-        for (const p of ttPosts) {
-          const ok =
-            ttMode === "keyword"
-              ? evaluateContent(ast, p)
-              : evaluate(ttAst, new Set(p.hashtags));
-          if (ok) collected.push(p);
-        }
-      } catch (e) {
-        console.error("[collect] TikTok error:", e);
-        errors.push(`TikTok: ${(e as Error).message}`);
-      }
+      tasks.push(
+        (async () => {
+          try {
+            const ttMode = getTikTokSearchMode();
+            const ttPosts = await searchTikTok({
+              hashtags: leaves,
+              mode: ttMode,
+              startTime: filters?.startDate,
+              endTime: filters?.endDate,
+              minLikes: filters?.minLikes,
+              limit: maxResults ?? 50,
+            });
+            // hashtag モードは #一致を後処理で評価（IG と同じ方針）。
+            // keyword モードは EnsembleData がクォート未対応で日本語をトークン分割し
+            // 「うるぷくシール」→「うる/ぷく/シール」を含むだけの投稿まで返すため、
+            // 元 AST を本文に対してフレーズ完全一致評価し、過剰収集を除外する（他のワードでも同様）。
+            return ttPosts.filter((p) =>
+              ttMode === "keyword"
+                ? evaluateContent(ast, p)
+                : evaluate(ttAst, new Set(p.hashtags))
+            );
+          } catch (e) {
+            console.error("[collect] TikTok error:", e);
+            errors.push(`TikTok: ${(e as Error).message}`);
+            return [];
+          }
+        })()
+      );
     }
   }
+
+  for (const posts of await Promise.all(tasks)) collected.push(...posts);
 
   // 重複排除 (platform + externalId)
   const seen = new Set<string>();

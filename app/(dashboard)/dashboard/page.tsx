@@ -7,6 +7,7 @@ import { PlatformBreakdown } from "@/components/dashboard/platform-breakdown";
 import { ResearchScopeCards } from "@/components/dashboard/research-scope";
 import { InfluencerTable } from "@/components/dashboard/influencer-table";
 import { DailyVolumeChart } from "@/components/charts/daily-volume";
+import { CollectionStatus } from "@/components/dashboard/collection-status";
 
 export const dynamic = "force-dynamic";
 
@@ -113,6 +114,10 @@ export default async function DashboardPage({ searchParams }: PageProps) {
       </header>
 
       <SearchForm />
+
+      {latest && latest.status === "RUNNING" ? (
+        <CollectionStatus searchId={latest.id} initialStatus="RUNNING" />
+      ) : null}
 
       <ResearchScopeCards />
 
