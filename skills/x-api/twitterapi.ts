@@ -18,6 +18,11 @@ const MAX_PAGES_SAFETY = 250;
 const MIN_INTERVAL_MS = Number(process.env.TWITTERAPI_IO_MIN_INTERVAL_MS ?? 5100);
 const MAX_RETRIES_429 = 3;
 
+// twitterapi.io の遅延/ハングで関数全体が 504/タイムアウトするのを防ぐため、
+// 1リクエストごとに打ち切る。タイムアウトは collect 側の try/catch が拾い、
+// 他媒体（IG/TikTok）の結果は守られる。
+const FETCH_TIMEOUT_MS = Number(process.env.X_FETCH_TIMEOUT_MS ?? 20000);
+
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 interface TwitterApiIoAuthor {
@@ -125,13 +130,30 @@ async function fetchPage(
   if (cursor) url.searchParams.set("cursor", cursor);
 
   for (let attempt = 0; ; attempt++) {
-    const res = await fetch(url.toString(), {
-      headers: {
-        "X-API-Key": getApiKey(),
-        "User-Agent": "HashPulse/0.1",
-      },
-      cache: "no-store",
-    });
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), FETCH_TIMEOUT_MS);
+    let res: Response;
+    try {
+      res = await fetch(url.toString(), {
+        headers: {
+          "X-API-Key": getApiKey(),
+          "User-Agent": "HashPulse/0.1",
+        },
+        cache: "no-store",
+        signal: ctrl.signal,
+      });
+    } catch (e) {
+      clearTimeout(timer);
+      if ((e as Error).name === "AbortError") {
+        throw new XApiError(
+          `twitterapi.io リクエストが ${FETCH_TIMEOUT_MS / 1000}秒でタイムアウトしました`,
+          0,
+          null
+        );
+      }
+      throw e;
+    }
+    clearTimeout(timer);
 
     const textBody = await res.text();
     let body: unknown = textBody;

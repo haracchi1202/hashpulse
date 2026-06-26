@@ -15,6 +15,11 @@ const MAX_PAGES_SAFETY = 250;
 const MIN_INTERVAL_MS = Number(process.env.IG_MIN_INTERVAL_MS ?? 1200);
 const MAX_RETRIES_429 = 3;
 
+// EnsembleData の遅延/ハングで関数全体が 504/タイムアウトするのを防ぐため、
+// 1リクエストごとに打ち切る。タイムアウトは collect 側の try/catch が拾い、
+// 他媒体（X/TikTok）の結果は守られる。
+const FETCH_TIMEOUT_MS = Number(process.env.IG_FETCH_TIMEOUT_MS ?? 20000);
+
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 export class IGEnsembleError extends Error {
@@ -144,10 +149,26 @@ async function fetchPage(
   if (cursor) url.searchParams.set("cursor", cursor);
 
   for (let attempt = 0; ; attempt++) {
-    const res = await fetch(url.toString(), {
-      headers: { "User-Agent": "HashPulse/0.1" },
-      cache: "no-store",
-    });
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), FETCH_TIMEOUT_MS);
+    let res: Response;
+    try {
+      res = await fetch(url.toString(), {
+        headers: { "User-Agent": "HashPulse/0.1" },
+        cache: "no-store",
+        signal: ctrl.signal,
+      });
+    } catch (e) {
+      clearTimeout(timer);
+      if ((e as Error).name === "AbortError") {
+        throw new IGEnsembleError(
+          `EnsembleData IG リクエストが ${FETCH_TIMEOUT_MS / 1000}秒でタイムアウトしました`,
+          0
+        );
+      }
+      throw e;
+    }
+    clearTimeout(timer);
     const textBody = await res.text();
     let body: unknown = textBody;
     try {

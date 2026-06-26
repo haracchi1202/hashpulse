@@ -39,16 +39,17 @@ export async function runCollection(input: CollectInput): Promise<CollectResult>
 
   const collected: NormalizedPost[] = [];
 
-  // X / IG / TikTok を並列実行する。直列だと合計時間が関数の実行上限(60s)を
-  // 超えて 504 になるため、合計→最大時間に抑えて時間内に取れた分を返す。
-  const tasks: Promise<NormalizedPost[]>[] = [];
+  // X / IG / TikTok を並列実行し、完了した媒体から逐次 collected に積む。
+  // 直列だと合計時間が関数実行上限を超えるため並列化し、さらに後段の時間予算で
+  // 確実に DB 保存・status 確定まで到達させる（ハング媒体があっても固まらせない）。
+  const tasks: Promise<void>[] = [];
 
   if (platforms.includes("X")) {
     tasks.push(
       (async () => {
         const xQuery = compileToXQuery(ast);
         try {
-          return await searchX({
+          const xPosts = await searchX({
             query: xQuery,
             startTime: filters?.startDate ? `${filters.startDate}T00:00:00Z` : undefined,
             endTime: filters?.endDate ? `${filters.endDate}T23:59:59Z` : undefined,
@@ -58,10 +59,10 @@ export async function runCollection(input: CollectInput): Promise<CollectResult>
             maxResults: maxResults ?? 50,
             maxPages: 2,
           });
+          collected.push(...xPosts);
         } catch (e) {
           console.error("[collect] X API error:", e);
           errors.push(`X: ${(e as Error).message}`);
-          return [];
         }
       })()
     );
@@ -85,11 +86,10 @@ export async function runCollection(input: CollectInput): Promise<CollectResult>
               limit: maxResults ?? 50,
             });
             // IG は単一タグ取得 → AND/NOT を後処理で評価（キーワードもタグ化済みで評価）
-            return igPosts.filter((p) => evaluate(igAst, new Set(p.hashtags)));
+            collected.push(...igPosts.filter((p) => evaluate(igAst, new Set(p.hashtags))));
           } catch (e) {
             console.error("[collect] IG error:", e);
             errors.push(`IG: ${(e as Error).message}`);
-            return [];
           }
         })()
       );
@@ -119,22 +119,41 @@ export async function runCollection(input: CollectInput): Promise<CollectResult>
             // keyword モードは EnsembleData がクォート未対応で日本語をトークン分割し
             // 「うるぷくシール」→「うる/ぷく/シール」を含むだけの投稿まで返すため、
             // 元 AST を本文に対してフレーズ完全一致評価し、過剰収集を除外する（他のワードでも同様）。
-            return ttPosts.filter((p) =>
-              ttMode === "keyword"
-                ? evaluateContent(ast, p)
-                : evaluate(ttAst, new Set(p.hashtags))
+            collected.push(
+              ...ttPosts.filter((p) =>
+                ttMode === "keyword"
+                  ? evaluateContent(ast, p)
+                  : evaluate(ttAst, new Set(p.hashtags))
+              )
             );
           } catch (e) {
             console.error("[collect] TikTok error:", e);
             errors.push(`TikTok: ${(e as Error).message}`);
-            return [];
           }
         })()
       );
     }
   }
 
-  for (const posts of await Promise.all(tasks)) collected.push(...posts);
+  // 全体の時間予算。Vercel の関数上限(300s)に届く前に必ず DB 保存と status 確定へ
+  // 進むため、予算超過時は時間内に取れた分（completed 媒体が collected に積んだ分）だけで
+  // 先へ進む。残りの fetch は破棄されるが、各 fetch にもタイムアウトがあるため通常は予算前に揃う。
+  const BUDGET_MS = Number(process.env.COLLECT_BUDGET_MS ?? 210000);
+  let budgetHit = false;
+  await Promise.race([
+    Promise.allSettled(tasks),
+    new Promise<void>((resolve) =>
+      setTimeout(() => {
+        budgetHit = true;
+        resolve();
+      }, BUDGET_MS)
+    ),
+  ]);
+  if (budgetHit) {
+    errors.push(
+      `collect: 時間予算(${BUDGET_MS / 1000}s)を超えたため、取得できた分のみで集計しました`
+    );
+  }
 
   // 重複排除 (platform + externalId)
   const seen = new Set<string>();

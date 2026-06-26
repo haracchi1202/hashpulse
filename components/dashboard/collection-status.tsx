@@ -21,7 +21,12 @@ export function CollectionStatus({ searchId, initialStatus }: Props) {
   const [status, setStatus] = useState<Status>(initialStatus);
   const [postCount, setPostCount] = useState<number>(0);
   const [elapsed, setElapsed] = useState(0);
+  const [timedOut, setTimedOut] = useState(false);
   const startedAt = useRef<number | null>(null);
+
+  // ポーリングの上限（保険）。サーバ側の自己修復(STALE_MS=360s)が ERROR に倒すのが通常だが、
+  // 万一それも届かない場合に無限ポーリングを止める。
+  const POLL_TIMEOUT_SEC = 450;
 
   useEffect(() => {
     if (status !== "RUNNING") return;
@@ -29,10 +34,17 @@ export function CollectionStatus({ searchId, initialStatus }: Props) {
     let stopped = false;
     startedAt.current = performance.now();
 
-    // 経過秒カウンタ（体感のため）
+    // 経過秒カウンタ（体感のため）。上限を超えたらポーリングを止めて案内を出す。
     const tick = setInterval(() => {
       if (startedAt.current != null) {
-        setElapsed(Math.floor((performance.now() - startedAt.current) / 1000));
+        const sec = Math.floor((performance.now() - startedAt.current) / 1000);
+        setElapsed(sec);
+        if (sec >= POLL_TIMEOUT_SEC) {
+          stopped = true;
+          setTimedOut(true);
+          clearTimeout(timer);
+          clearInterval(tick);
+        }
       }
     }, 1000);
 
@@ -62,6 +74,14 @@ export function CollectionStatus({ searchId, initialStatus }: Props) {
       clearInterval(tick);
     };
   }, [status, searchId, router]);
+
+  if (timedOut) {
+    return (
+      <div className="rounded-md border border-amber-500/40 bg-amber-500/10 px-4 py-3 text-sm text-amber-600 dark:text-amber-400">
+        収集に時間がかかっています。ページを再読み込みして状態を確認するか、対象プラットフォームを減らして再検索してください。
+      </div>
+    );
+  }
 
   if (status === "RUNNING") {
     return (
