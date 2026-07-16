@@ -44,6 +44,26 @@ function getToken(): string {
   return token;
 }
 
+// EnsembleData の独自ステータスコードを、ダッシュボードにそのまま出せる日本語に翻訳する。
+// 生の JSON をユーザーに見せても意味が伝わらないため。他のエラーは原文を保持する。
+function friendlyEnsembleMessage(status: number, body: unknown): string {
+  // 493: 契約(サブスクリプション)期限切れ。支払いを再開すれば復旧する。
+  if (status === 493) {
+    return "EnsembleData(TikTok/IG のデータ取得サービス)の契約が期限切れです。データを再開するには契約更新（支払い）が必要です。";
+  }
+  // 495: 当日の取得上限(daily units)を使い切った。翌 09:00(JST)にリセットされる。
+  if (status === 495) {
+    return "EnsembleData の本日の取得上限に達しました。翌日（UTC 0時 = 日本時間 午前9時）にリセットされます。";
+  }
+  const detail =
+    body && typeof body === "object" && "detail" in body
+      ? String((body as { detail?: unknown }).detail)
+      : typeof body === "string"
+        ? body
+        : JSON.stringify(body);
+  return `EnsembleData ${status}: ${detail}`;
+}
+
 function toUnixSeconds(iso?: string): number | undefined {
   if (!iso) return undefined;
   const ms = Date.parse(iso);
@@ -142,11 +162,7 @@ async function fetchPage(
       continue;
     }
     if (!res.ok) {
-      throw new TikTokApiError(
-        `EnsembleData ${res.status}: ${typeof body === "string" ? body : JSON.stringify(body)}`,
-        res.status,
-        body
-      );
+      throw new TikTokApiError(friendlyEnsembleMessage(res.status, body), res.status, body);
     }
     return body as EnsembleHashtagResponse;
   }
