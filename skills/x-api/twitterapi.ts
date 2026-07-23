@@ -13,9 +13,11 @@ const ADVANCED_SEARCH = "/twitter/tweet/advanced_search";
 // 速度より網羅性を優先するため大きめ（250ページ）。
 const MAX_PAGES_SAFETY = 250;
 
-// 無料枠は「5秒に1リクエスト」の QPS 制限。429 回避のためページ間隔を空ける。
-// 有料プランでは TWITTERAPI_IO_MIN_INTERVAL_MS=0 等で短縮可能。
-const MIN_INTERVAL_MS = Number(process.env.TWITTERAPI_IO_MIN_INTERVAL_MS ?? 5100);
+// twitterapi.io のページ間隔(ms)。無料枠は「5秒に1リクエスト」だが、当プロジェクトは
+// クレジット課金の有料キーを使っており QPS 余裕があるため既定を短くする。5.1秒のままだと
+// 50ページ(=1000件)取得に約255秒かかり Vercel 時間予算(210s)を超えて 0 件になっていた。
+// 429 が出ても fetchPage 側でバックオフ・リトライするため安全。無料キー運用時は env で戻す。
+const MIN_INTERVAL_MS = Number(process.env.TWITTERAPI_IO_MIN_INTERVAL_MS ?? 600);
 const MAX_RETRIES_429 = 3;
 
 // twitterapi.io の遅延/ハングで関数全体が 504/タイムアウトするのを防ぐため、
@@ -212,6 +214,8 @@ export async function searchTwitterApiIo(
     }
     if (collected.length >= target) break;
     if (!res.has_next_page || !res.next_cursor) break;
+    // 空ページが続くのに has_next_page=true を返し続けるケースの暴走防止。
+    if ((res.tweets?.length ?? 0) === 0) break;
     cursor = res.next_cursor;
   }
 

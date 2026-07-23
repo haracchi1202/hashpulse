@@ -46,7 +46,9 @@ export function SearchForm() {
             },
             save,
             name: save && saveName ? saveName : undefined,
-            maxResults: 1000,
+            // X(twitterapi)は 1ページ20件をページ送りで集めるため、大きすぎると
+            // Vercel 時間予算(210s)内に終わらず 0 件になる。実用上十分な件数に抑える。
+            maxResults: 300,
           }),
         });
         // 収集はサーバ側でバックグラウンド実行されるため、ここではすぐに searchId が返る。
