@@ -16,6 +16,9 @@ export function SearchForm() {
   const [minLikes, setMinLikes] = useState<string>("");
   const [minFollowers, setMinFollowers] = useState<string>("");
   const [lang, setLang] = useState<"" | "ja" | "en">("ja");
+  // 収集対象期間（YYYY-MM-DD）。空欄なら期間指定なし（従来動作）。
+  const [startDate, setStartDate] = useState<string>("");
+  const [endDate, setEndDate] = useState<string>("");
   const [save, setSave] = useState(false);
   const [saveName, setSaveName] = useState("");
 
@@ -31,6 +34,10 @@ export function SearchForm() {
       setError("プラットフォームを選択してください");
       return;
     }
+    if (startDate && endDate && startDate > endDate) {
+      setError("開始日は終了日より前の日付にしてください");
+      return;
+    }
     startTransition(async () => {
       try {
         const res = await fetch("/api/search", {
@@ -43,6 +50,8 @@ export function SearchForm() {
               minLikes: minLikes ? Number(minLikes) : undefined,
               minFollowers: minFollowers ? Number(minFollowers) : undefined,
               lang: lang || undefined,
+              startDate: startDate || undefined,
+              endDate: endDate || undefined,
             },
             save,
             name: save && saveName ? saveName : undefined,
@@ -166,6 +175,48 @@ export function SearchForm() {
             <option value="en">English</option>
           </select>
         </div>
+      </div>
+
+      <div className="space-y-2">
+        <Label>収集対象期間（任意）</Label>
+        <div className="flex flex-wrap items-center gap-2">
+          <Input
+            id="startDate"
+            type="date"
+            value={startDate}
+            max={endDate || undefined}
+            onChange={(e) => setStartDate(e.target.value)}
+            className="w-auto"
+            aria-label="開始日"
+          />
+          <span className="text-sm text-muted-foreground">〜</span>
+          <Input
+            id="endDate"
+            type="date"
+            value={endDate}
+            min={startDate || undefined}
+            onChange={(e) => setEndDate(e.target.value)}
+            className="w-auto"
+            aria-label="終了日"
+          />
+          {(startDate || endDate) ? (
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              onClick={() => {
+                setStartDate("");
+                setEndDate("");
+              }}
+            >
+              クリア
+            </Button>
+          ) : null}
+        </div>
+        <p className="text-xs text-muted-foreground">
+          空欄なら期間指定なしで収集します。期間を広げると取得に時間がかかり、時間制限（1回あたり最大約210秒）やページ上限により古い投稿へ到達する前に打ち切られる場合があります。
+          X は全期間、Instagram / TikTok は新しい投稿を優先して収集します。
+        </p>
       </div>
 
       <div className="flex items-end gap-3 pt-1">
